@@ -1,0 +1,18 @@
+# vllm>=0.12.0
+torch>=2.10.0
+torchvision>=0.25.0
+transformers>=4.57.1
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+python-multipart>=0.0.9
+pymupdf>=1.27.0
+requests>=2.31.0
+Pillow>=12.0.0
+einops>=0.8.0
+addict>=2.4.0
+easydict>=1.13
+psutil>=7.0.0
+
+# Model download (pick one)
+huggingface_hub>=0.23.0
+# modelscope>=1.12.0

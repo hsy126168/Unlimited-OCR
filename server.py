@@ -4,30 +4,21 @@ FastAPI wrapper around local vLLM Unlimited-OCR for PDF parsing.
 Accepts a PDF file, converts each page to PNG, then calls the local
 vLLM model with multi-image inference to produce markdown output.
 
-Start vLLM first:
-    docker run --rm --gpus all --network host --ipc host \
-      vllm/vllm-openai:unlimited-ocr \
-      baidu/Unlimited-OCR \
-      --trust-remote-code \
-      --logits_processors vllm.model_executor.models.unlimited_ocr:NGramPerReqLogitsProcessor \
-      --no-enable-prefix-caching \
-      --mm-processor-cache-gb 0
+Start vLLM first (no Docker):
+    python start_vllm.py --gpu 0
 
 Then run this service:
-    uvicorn server:app --host 0.0.0.0 --port 8080
+    python server.py
 """
 
 import base64
 import json
 import os
-import tempfile
-from typing import Optional
 
 import fitz  # PyMuPDF
 import requests
 from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
 
 app = FastAPI(title="Unlimited-OCR PDF Parser")
 
