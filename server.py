@@ -1,11 +1,11 @@
 """
-FastAPI wrapper around local vLLM Unlimited-OCR for PDF parsing.
+FastAPI wrapper around SGLang Unlimited-OCR for PDF parsing.
 
 Accepts a PDF file, converts each page to PNG, then calls the local
-vLLM model with multi-image inference to produce markdown output.
+SGLang model with multi-image inference to produce markdown output.
 
-Start vLLM first (no Docker):
-    python start_vllm.py --gpu 0
+Start SGLang first:
+    python start_sglang.py --gpu 0
 
 Then run this service:
     python server.py
@@ -22,13 +22,24 @@ from fastapi.responses import StreamingResponse
 
 app = FastAPI(title="Unlimited-OCR PDF Parser")
 
-VLLM_BASE_URL = os.getenv("VLLM_BASE_URL", "http://localhost:8000")
-MODEL_NAME = "baidu/Unlimited-OCR"
+SGLANG_BASE_URL = os.getenv("SGLANG_BASE_URL", "http://localhost:10000")
+MODEL_NAME = "Unlimited-OCR"
 PDF_DPI = 300
 NGRAM_SIZE = 35
 NGRAM_WINDOW_SINGLE = 128
 NGRAM_WINDOW_MULTI = 1024
 REQUEST_TIMEOUT = 1200
+NO_REPEAT_NGRAM_PROCESSOR_STR = None
+
+
+def get_ngram_processor_str():
+    global NO_REPEAT_NGRAM_PROCESSOR_STR
+    if NO_REPEAT_NGRAM_PROCESSOR_STR is None:
+        from sglang.srt.sampling.custom_logit_processor import (
+            DeepseekOCRNoRepeatNGramLogitProcessor,
+        )
+        NO_REPEAT_NGRAM_PROCESSOR_STR = DeepseekOCRNoRepeatNGramLogitProcessor.to_str()
+    return NO_REPEAT_NGRAM_PROCESSOR_STR
 
 
 def pdf_to_pngs(pdf_bytes: bytes, dpi: int = PDF_DPI) -> list[bytes]:
@@ -49,37 +60,37 @@ def encode_png_bytes(png_data: bytes) -> dict:
 
 def build_payload(
     page_images: list[bytes],
-    prompt: str = "<image>document parsing.",
+    prompt: str = "document parsing.",
     temperature: float = 0,
 ) -> dict:
     is_multi = len(page_images) > 1
     if is_multi:
-        prompt = "<image>Multi page parsing."
+        prompt = "Multi page parsing."
 
     content = [{"type": "text", "text": prompt}]
     content.extend(encode_png_bytes(img) for img in page_images)
 
-    return {
+    payload = {
         "model": MODEL_NAME,
         "messages": [{"role": "user", "content": content}],
         "temperature": temperature,
         "max_tokens": 32768,
         "skip_special_tokens": False,
         "stream": True,
-        "extra_body": {
+    }
+    if NGRAM_SIZE > 0:
+        payload["custom_logit_processor"] = get_ngram_processor_str()
+        payload["custom_params"] = {
             "ngram_size": NGRAM_SIZE,
             "window_size": NGRAM_WINDOW_MULTI if is_multi else NGRAM_WINDOW_SINGLE,
-        },
-    }
+        }
+    return payload
 
 
-def stream_from_vllm(payload: dict):
-    """Yield text chunks from vLLM streaming response."""
-    extra = payload.pop("extra_body", {})
-    payload.update(extra)
-
+def stream_from_sglang(payload: dict):
+    """Yield text chunks from SGLang streaming response."""
     resp = requests.post(
-        f"{VLLM_BASE_URL}/v1/chat/completions",
+        f"{SGLANG_BASE_URL}/v1/chat/completions",
         headers={"Content-Type": "application/json"},
         data=json.dumps(payload),
         timeout=REQUEST_TIMEOUT,
@@ -107,16 +118,16 @@ def stream_from_vllm(payload: dict):
 
 
 def collect_full_response(payload: dict) -> str:
-    return "".join(stream_from_vllm(payload))
+    return "".join(stream_from_sglang(payload))
 
 
 @app.get("/health")
 def health():
     try:
-        r = requests.get(f"{VLLM_BASE_URL}/health", timeout=5)
-        return {"status": "ok", "vllm": r.status_code == 200}
+        r = requests.get(f"{SGLANG_BASE_URL}/health", timeout=5)
+        return {"status": "ok", "sglang": r.status_code == 200}
     except Exception:
-        return {"status": "ok", "vllm": False}
+        return {"status": "ok", "sglang": False}
 
 
 @app.post("/parse-pdf")
@@ -146,7 +157,7 @@ async def parse_pdf(
 
     if stream:
         def event_stream():
-            for chunk in stream_from_vllm(payload):
+            for chunk in stream_from_sglang(payload):
                 yield f"data: {json.dumps({'content': chunk})}\n\n"
             yield "data: [DONE]\n\n"
 
@@ -178,7 +189,7 @@ async def parse_images(
 
     if stream:
         def event_stream():
-            for chunk in stream_from_vllm(payload):
+            for chunk in stream_from_sglang(payload):
                 yield f"data: {json.dumps({'content': chunk})}\n\n"
             yield "data: [DONE]\n\n"
 
