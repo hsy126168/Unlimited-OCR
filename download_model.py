@@ -10,7 +10,7 @@ Usage:
 import argparse
 import os
 import sys
-
+os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
 
 def download_from_huggingface(model_id: str, save_dir: str, mirror: str | None = None):
     if mirror:
@@ -22,8 +22,7 @@ def download_from_huggingface(model_id: str, save_dir: str, mirror: str | None =
     print(f"Downloading {model_id} from HuggingFace...")
     path = snapshot_download(
         repo_id=model_id,
-        local_dir=save_dir,
-        local_dir_use_symlinks=False,
+        local_dir=save_dir
     )
     print(f"Done: {path}")
     return path
